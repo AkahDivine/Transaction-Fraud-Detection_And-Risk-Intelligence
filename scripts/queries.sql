@@ -18,7 +18,7 @@
 
 
 /*===========================================================================
-DELIVERABLE 1: TRANSACTION OVERVIEW & BASELINE KPIS
+DELIVERABLE 1: Transaction Overview & Baseline KPIs
 ============================================================================*/
 
 -- 1.1 Portfolio level transation statistics
@@ -165,6 +165,84 @@ SELECT
     ROUND(((total_volume - prevs_month_volume) / prevs_month_volume) * 100, 2) AS mom_volume_pt_change
 FROM 
     month_lag;
+
+
+
+/*===========================================================================
+DELIVERABLE 2: Anomaly Detection & Velocity Checks
+============================================================================*/
+
+-- 2.1 Rapid Transaction Behavior Analysis (≤ 60 mins)
+-- Identifies customers with frequent fast transactions within short time gaps and summarizes their transaction behavior and spending patterns
+
+WITH lag_cte AS (
+    SELECT
+        customer_key,
+        transaction_id,
+        transaction_datetime,
+        amount_usd,
+        LAG(transaction_id) OVER (
+            PARTITION BY customer_key 
+            ORDER BY transaction_datetime 
+        ) 										AS prevs_transaction_id,
+        LAG(transaction_datetime) OVER (
+            PARTITION BY customer_key 
+            ORDER BY transaction_datetime 
+        ) 										AS prevs_transaction_datetime,
+        LAG(amount_usd) OVER (
+            PARTITION BY customer_key 
+            ORDER BY transaction_datetime 
+        ) 										AS prevs_amount_usd
+    FROM 
+		fact_transactions
+),
+transaction_filter AS (
+    SELECT
+        customer_key,
+        transaction_id,
+        prevs_transaction_id,
+        transaction_datetime,
+        prevs_transaction_datetime,
+        amount_usd,
+        prevs_amount_usd,
+        ROUND(EXTRACT(EPOCH FROM (transaction_datetime - prevs_transaction_datetime)) / 60, 2) AS transaction_gap
+    FROM 
+		lag_cte
+    WHERE 
+		prevs_transaction_datetime IS NOT NULL
+),
+rapid_transactions AS (
+    SELECT
+        customer_key,
+        COUNT(*)                                                   AS total_transactions,
+        ROUND(MIN(transaction_gap), 2)                             AS min_transaction_gap,
+        ROUND(AVG(transaction_gap), 2)                             AS avg_transaction_gap,
+        ROUND(AVG(prevs_amount_usd + amount_usd), 2)               AS avg_amount_usd
+    FROM 
+		transaction_filter
+    WHERE 
+		transaction_gap <= 60
+    GROUP BY 
+		customer_key
+    HAVING 
+		COUNT(*) >= 5
+)
+SELECT
+    t.customer_key,
+    c.full_name,
+    c.country,
+    c.kyc_status,
+    t.total_transactions,
+    t.min_transaction_gap,
+    t.avg_transaction_gap,
+    t.avg_amount_usd
+FROM 
+		rapid_transactions AS t
+LEFT JOIN 
+		dim_customer AS c ON t.customer_key = c.customer_key
+ORDER BY 
+		t.total_transactions DESC
+LIMIT 50;
 
 
 
