@@ -245,6 +245,129 @@ ORDER BY
 LIMIT 50;
 
 
+-- 2.2 Transaction Activity by Time Window
+-- Categorizes transactions into time buckets (off-hours, business hours, others) and summarizes volume, customer activity, and percentage distribution
+
+SELECT
+    CASE
+        WHEN transaction_hour BETWEEN 1 AND 4  THEN 'Off_Hours [1AM-4AM]'
+        WHEN transaction_hour BETWEEN 8 AND 18 THEN 'Business_Hours [8AM-6PM]'
+        ELSE 'Other Hours'
+    END                                                           AS time_window,
+    COUNT(*)                                                      AS total_transactions,
+    COUNT(DISTINCT customer_key)                                  AS distinct_customers,
+    ROUND(SUM(amount_usd), 2)                                     AS total_volume,
+    ROUND(AVG(amount_usd), 2)                                     AS avg_volume,
+    ROUND((COUNT(*) / SUM(COUNT(*)) OVER ()) * 100, 2)            AS transactions_pct
+FROM fact_transactions
+GROUP BY
+    CASE
+        WHEN transaction_hour BETWEEN 1 AND 4  THEN 'Off_Hours [1AM-4AM]'
+        WHEN transaction_hour BETWEEN 8 AND 18 THEN 'Business_Hours [8AM-6PM]'
+        ELSE 'Other Hours'
+    END;
+
+
+-- 2.3 High-Value Outlier Detection Using Z-Score
+-- Calculates the average and standard deviation of transaction amounts, then identifies the top 100 transactions that are significantly above 
+-- normal (z-score > 3), enriching results with customer, merchant, and location details
+
+WITH stats AS (
+    SELECT
+        ROUND(AVG(amount_usd), 2)              AS avg_amount,
+        ROUND(STDDEV(amount_usd), 2)           AS std_dev_amount
+    FROM 
+		fact_transactions
+)
+SELECT
+    t.transaction_id,
+    t.customer_key,
+    c.full_name,
+    t.transaction_datetime,
+    t.transaction_type,
+    t.channel,
+    t.amount_usd,
+    s.avg_amount,
+    s.std_dev_amount,
+    ROUND((t.amount_usd - s.avg_amount) / NULLIF(s.std_dev_amount,0), 2) AS z_score,
+    m.merchant_name,
+    m.merchant_category,
+    m.is_shell_merchant,
+    l.country,
+    l.is_high_risk_country
+FROM 
+		fact_transactions AS t
+LEFT JOIN 
+		dim_customer AS c ON t.customer_key = c.customer_key
+LEFT JOIN 
+		dim_merchant AS m ON t.merchant_key = m.merchant_key
+LEFT JOIN 
+		dim_location AS l ON t.location_key = l.location_key
+CROSS JOIN 
+		stats AS s
+WHERE
+    ROUND((t.amount_usd - s.avg_amount) / NULLIF(s.std_dev_amount,0), 2) > 3
+ORDER BY
+    z_score DESC
+LIMIT 100;
+
+
+
+-- 2.4 Daily Transaction Volume Spike Detection (7-Day Rolling Analysis)
+-- Aggregates daily transaction volume and compares each day to a rolling 7-day average to identify unusual spikes or elevated activity levels
+
+WITH daily_volume AS (
+    SELECT
+        t.transaction_date,
+        d.day_of_week,
+        d.is_weekend,
+        COUNT(*)                          AS total_transactions,
+        ROUND(SUM(t.amount_usd), 2)       AS daily_volume,
+        ROUND(AVG(t.amount_usd), 2)       AS daily_avg_volume
+    FROM 
+		fact_transactions AS t
+    LEFT JOIN 
+		dim_date AS d ON t.date_key = d.date_key
+    GROUP BY
+        t.transaction_date, d.day_of_week, d.is_weekend
+),
+rolling_avg AS (
+    SELECT
+        *,
+        ROUND(
+            AVG(daily_volume) OVER (
+                ORDER BY transaction_date
+                ROWS BETWEEN 6 PRECEDING AND CURRENT ROW
+            ), 2
+        )										AS rolling_7days_avg,
+        ROUND(
+            daily_volume / NULLIF(
+                AVG(daily_volume) OVER (
+                    ORDER BY transaction_date
+                    ROWS BETWEEN 6 PRECEDING AND CURRENT ROW
+                ), 0
+            ), 2
+        )										AS spike_ratio
+    FROM daily_volume
+)
+SELECT
+    transaction_date,
+    day_of_week,
+    is_weekend,
+    total_transactions,
+    daily_volume,
+    rolling_7days_avg,
+    spike_ratio,
+    CASE
+        WHEN spike_ratio >= 2.0 THEN 'Spike Detected'
+        WHEN spike_ratio >= 1.5 THEN 'Elevated'
+        ELSE                         'Normal'
+    END AS spike_flag
+FROM 
+	rolling_avg
+ORDER BY 
+		spike_ratio DESC;
+
 
 
 
