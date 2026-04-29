@@ -369,7 +369,100 @@ ORDER BY
 		spike_ratio DESC;
 
 
+/*===========================================================================
+DELIVERABLE 3: Customer Risk Profiling
+============================================================================*/
+-- 3.1 Customer Behavior Shift & Risk Detection (Early vs Late Period)
+-- Compares customer transaction behavior across two time periods (early vs late), analyzing changes in spending, transaction volume, 
+-- time-of-day activity, and geographic spread to flag potential high-risk or anomalous behavior
 
+WITH base AS (
+    SELECT
+        t.customer_key,
+        t.amount_usd,
+        t.transaction_hour,
+        l.country,
+        CASE
+            WHEN t.transaction_hour BETWEEN 1 AND 4  THEN 'Off-Hours'
+            WHEN t.transaction_hour BETWEEN 8 AND 18 THEN 'Business-Hours'
+            ELSE 'Other-Hours'
+        END AS time_window,
+        CASE
+            WHEN t.transaction_date < '2024-05-01' THEN 'early'
+            ELSE 'late'
+        END AS period
+    FROM 
+		fact_transactions AS t
+    LEFT JOIN 
+		dim_location AS l ON t.location_key = l.location_key
+),
+customer_features AS (
+    SELECT
+        customer_key,
+        period,
+        COUNT(*)                          AS total_txn,
+        ROUND(AVG(amount_usd), 2)         AS avg_spend,
+        ROUND(STDDEV(amount_usd), 2)      AS stddev_spend,
+        ROUND(
+            SUM(CASE WHEN time_window = 'Off-Hours' THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 2
+        ) AS off_hours_pct,
+        ROUND(
+            SUM(CASE WHEN time_window = 'Business-Hours' THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 2
+        ) AS business_hours_pct,
+        ROUND(
+            SUM(CASE WHEN time_window = 'Other-Hours' THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 2
+        ) AS other_hours_pct,
+        COUNT(DISTINCT country)           AS country_count
+    FROM 
+		base
+    GROUP BY 
+		customer_key, period
+),
+early AS (
+    SELECT * FROM customer_features WHERE period = 'early'
+),
+late AS (
+    SELECT * FROM customer_features WHERE period = 'late'
+)
+SELECT
+    e.customer_key,
+    c.full_name,
+    c.country                        AS home_country,
+    c.kyc_status,
+    c.customer_segment,
+    c.preferred_channel,
+    e.avg_spend                     AS early_avg_spend,
+    l.avg_spend                     AS late_avg_spend,
+    ROUND(l.avg_spend / NULLIF(e.avg_spend, 0), 2) AS spend_multiplier,
+    e.total_txn,
+    l.total_txn,
+    (l.total_txn - e.total_txn)     AS txn_difference,
+    e.off_hours_pct,
+    l.off_hours_pct,
+    (l.off_hours_pct - e.off_hours_pct) AS off_hours_shift,
+    e.country_count                 AS early_country,
+    l.country_count                 AS late_country,
+    CASE
+        WHEN l.avg_spend / NULLIF(e.avg_spend, 0) >= 5
+         AND ABS(l.off_hours_pct - e.off_hours_pct) >= 20
+            THEN 'HIGH RISK - Likely Takeover'
+        WHEN l.avg_spend / NULLIF(e.avg_spend, 0) >= 3
+         OR ABS(l.off_hours_pct - e.off_hours_pct) >= 15
+            THEN 'MEDUIM RISK - Investigate'
+        ELSE 'Normal Behavior'
+    END AS risk_flag
+FROM 
+		early AS e
+LEFT JOIN 
+	late AS l ON e.customer_key = l.customer_key
+LEFT JOIN 
+	dim_customer AS c ON e.customer_key = c.customer_key
+WHERE
+    e.total_txn >= 3
+    AND l.total_txn >= 5
+ORDER BY 
+		spend_multiplier DESC
+LIMIT 200;
 
 
 
