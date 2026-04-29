@@ -465,6 +465,48 @@ ORDER BY
 LIMIT 200;
 
 
+-- 3.2 High-Risk Foreign Transaction Analysis (Customer-Level)
+-- Identifies customers performing transactions in foreign high-risk countries, summarizing transaction volume, 
+-- frequency, off-hours activity, and time range to highlight potentially suspicious cross-border behavior
+
+SELECT
+    t.customer_key,
+    c.full_name,
+    c.country                                       AS registered_country,
+    l.country                                       AS transaction_country,
+    l.is_high_risk_country,
+    COUNT(*)                                        AS foreign_transaction_count,
+    ROUND(SUM(t.amount_usd), 2)                     AS foreign_volume_usd,
+    ROUND(AVG(t.amount_usd), 2)                     AS avg_foreign_txn_value,
+    SUM(
+        CASE 
+            WHEN t.transaction_hour BETWEEN 1 AND 4 THEN 1 ELSE 0 
+        END
+    )                                               AS off_hours_txn_count,
+    ROUND(
+        SUM(
+            CASE 
+                WHEN t.transaction_hour BETWEEN 1 AND 4 THEN 1 ELSE 0 
+            END
+        ) * 100.0 / COUNT(*), 2
+    )                                               AS off_hours_pct,
+    MIN(t.transaction_date)                         AS first_foreign_txn,
+    MAX(t.transaction_date)                         AS last_foreign_txn
+FROM 
+		fact_transactions AS t
+LEFT JOIN 
+		dim_customer c ON t.customer_key = c.customer_key
+LEFT JOIN 
+		dim_location l ON t.location_key = l.location_key
+WHERE 
+    l.country != c.country
+    AND l.is_high_risk_country = 1
+GROUP BY
+    t.customer_key, c.full_name, c.country, l.country, l.is_high_risk_country
+HAVING 
+		COUNT(*) >= 3
+ORDER BY 
+    foreign_volume_usd DESC;
 
 
 
