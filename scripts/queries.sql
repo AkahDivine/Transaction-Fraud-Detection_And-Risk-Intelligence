@@ -33,8 +33,7 @@ SELECT
 	ROUND(MIN(amount_usd), 2)        AS min_transaction_amount,
 	ROUND(MAX(amount_usd), 2)        AS max_transaction_amount,
 	ROUND(STDDEV(amount_usd), 2)     AS stv_dev_amount
-FROM 
-    fact_transactions;
+FROM fact_transactions;
 
 
 -- 1.2 Volume & Transaction Share by Channel
@@ -47,12 +46,9 @@ SELECT
 	ROUND(AVG(amount_usd), 2)                                         AS avg_transaction_amount,
 	ROUND((COUNT(*) / SUM(COUNT(*)) OVER ()) * 100, 2)                AS transaction_pct,
 	ROUND((SUM(amount_usd) / SUM(SUM(amount_usd)) OVER ()) * 100, 2)  AS volume_pct
-FROM
-	fact_transactions
-GROUP BY 
-  channel
-ORDER BY 
-  total_volume DESC;
+FROM fact_transactions
+GROUP BY channel
+ORDER BY total_volume DESC;
 
 
 -- 1.3 Transaction & Volume Distribution by KYC Status
@@ -67,14 +63,10 @@ SELECT
     ROUND((SUM(t.amount_usd) / SUM(SUM(t.amount_usd)) OVER ()) * 100, 2)   AS volume_pct,
     ROUND((COUNT(DISTINCT c.customer_key) /
         SUM(COUNT(DISTINCT c.customer_key)) OVER ()) * 100, 2)             AS customer_pct
-FROM
-    dim_customer AS c
-LEFT JOIN
-    fact_transactions AS t ON c.customer_key = t.customer_key
-GROUP BY
-    c.kyc_status
-ORDER BY
-    total_volume DESC;
+FROM dim_customer AS c
+LEFT JOIN fact_transactions AS t ON c.customer_key = t.customer_key
+GROUP BY c.kyc_status
+ORDER BY total_volume DESC;
 
 
 -- 1.4 Monthly Transaction Trends & MoM Growth
@@ -91,12 +83,13 @@ WITH monthly_summary AS (
         COUNT(DISTINCT customer_key)      AS distinct_customers,
         ROUND(SUM(amount_usd), 2)         AS total_volume,
         ROUND(AVG(amount_usd), 2)         AS avg_transaction_amount
-    FROM 
-      fact_transactions AS t
-    LEFT JOIN 
-      dim_date AS d ON t.date_key = d.date_key
+    FROM fact_transactions AS t
+    LEFT JOIN dim_date AS d ON t.date_key = d.date_key
     GROUP BY 
-        year_number, month_number, month_name, quarter_name
+        year_number, 
+		month_number, 
+		month_name, 
+		quarter_name
 ),
 month_lag AS (
     SELECT
@@ -104,8 +97,7 @@ month_lag AS (
         LAG(total_volume) OVER (
             ORDER BY year_number, month_number
         )                                  AS prevs_month_volume
-    FROM 
-      monthly_summary
+    FROM monthly_summary
 )
 SELECT
     year_number,
@@ -119,8 +111,7 @@ SELECT
     prevs_month_volume,
     ROUND(total_volume - prevs_month_volume, 2)                                   AS mom_volume_change,
     ROUND(((total_volume - prevs_month_volume) / prevs_month_volume) * 100, 2)    AS mom_change_pct
-FROM 
-    month_lag;
+FROM month_lag;
 
 
 -- 1.5 Country-Level Monthly Transaction Trends & MoM Change
@@ -135,14 +126,13 @@ WITH monthly_summary AS (
         COUNT(*)                          AS total_transactions,
         ROUND(SUM(t.amount_usd), 2)       AS total_volume,
         ROUND(AVG(t.amount_usd), 2)       AS avg_volume
-    FROM 
-      fact_transactions AS t
-    LEFT JOIN 
-      dim_date AS d ON t.date_key = d.date_key
-    LEFT JOIN 
-      dim_location AS l ON t.location_key = l.location_key
+    FROM fact_transactions AS t
+    LEFT JOIN dim_date AS d ON t.date_key = d.date_key
+    LEFT JOIN dim_location AS l ON t.location_key = l.location_key
     GROUP BY 
-        l.country, d.month_number, d.month_name
+        l.country, 
+		d.month_number, 
+		d.month_name
 ),
 month_lag AS (
     SELECT
@@ -163,8 +153,7 @@ SELECT
     prevs_month_volume,
     total_volume - prevs_month_volume                                          AS mom_volume_change,
     ROUND(((total_volume - prevs_month_volume) / prevs_month_volume) * 100, 2) AS mom_volume_pt_change
-FROM 
-    month_lag;
+FROM month_lag;
 
 
 
@@ -193,8 +182,7 @@ WITH lag_cte AS (
             PARTITION BY customer_key 
             ORDER BY transaction_datetime 
         ) 										AS prevs_amount_usd
-    FROM 
-		fact_transactions
+    FROM fact_transactions
 ),
 transaction_filter AS (
     SELECT
@@ -206,10 +194,8 @@ transaction_filter AS (
         amount_usd,
         prevs_amount_usd,
         ROUND(EXTRACT(EPOCH FROM (transaction_datetime - prevs_transaction_datetime)) / 60, 2) AS transaction_gap
-    FROM 
-		lag_cte
-    WHERE 
-		prevs_transaction_datetime IS NOT NULL
+    FROM lag_cte
+    WHERE prevs_transaction_datetime IS NOT NULL
 ),
 rapid_transactions AS (
     SELECT
@@ -218,14 +204,10 @@ rapid_transactions AS (
         ROUND(MIN(transaction_gap), 2)                             AS min_transaction_gap,
         ROUND(AVG(transaction_gap), 2)                             AS avg_transaction_gap,
         ROUND(AVG(prevs_amount_usd + amount_usd), 2)               AS avg_amount_usd
-    FROM 
-		transaction_filter
-    WHERE 
-		transaction_gap <= 60
-    GROUP BY 
-		customer_key
-    HAVING 
-		COUNT(*) >= 5
+    FROM transaction_filter
+    WHERE transaction_gap <= 60
+    GROUP BY customer_key
+    HAVING COUNT(*) >= 5
 )
 SELECT
     t.customer_key,
@@ -236,12 +218,9 @@ SELECT
     t.min_transaction_gap,
     t.avg_transaction_gap,
     t.avg_amount_usd
-FROM 
-		rapid_transactions AS t
-LEFT JOIN 
-		dim_customer AS c ON t.customer_key = c.customer_key
-ORDER BY 
-		t.total_transactions DESC
+FROM rapid_transactions AS t
+LEFT JOIN dim_customer AS c ON t.customer_key = c.customer_key
+ORDER BY t.total_transactions DESC
 LIMIT 50;
 
 
@@ -276,8 +255,7 @@ WITH stats AS (
     SELECT
         ROUND(AVG(amount_usd), 2)              AS avg_amount,
         ROUND(STDDEV(amount_usd), 2)           AS std_dev_amount
-    FROM 
-		fact_transactions
+    FROM fact_transactions
 )
 SELECT
     t.transaction_id,
@@ -295,20 +273,14 @@ SELECT
     m.is_shell_merchant,
     l.country,
     l.is_high_risk_country
-FROM 
-		fact_transactions AS t
-LEFT JOIN 
-		dim_customer AS c ON t.customer_key = c.customer_key
-LEFT JOIN 
-		dim_merchant AS m ON t.merchant_key = m.merchant_key
-LEFT JOIN 
-		dim_location AS l ON t.location_key = l.location_key
-CROSS JOIN 
-		stats AS s
+FROM fact_transactions AS t
+LEFT JOIN dim_customer AS c ON t.customer_key = c.customer_key
+LEFT JOIN dim_merchant AS m ON t.merchant_key = m.merchant_key
+LEFT JOIN dim_location AS l ON t.location_key = l.location_key
+CROSS JOIN stats AS s
 WHERE
     ROUND((t.amount_usd - s.avg_amount) / NULLIF(s.std_dev_amount,0), 2) > 3
-ORDER BY
-    z_score DESC
+ORDER BY z_score DESC
 LIMIT 100;
 
 
@@ -324,12 +296,12 @@ WITH daily_volume AS (
         COUNT(*)                          AS total_transactions,
         ROUND(SUM(t.amount_usd), 2)       AS daily_volume,
         ROUND(AVG(t.amount_usd), 2)       AS daily_avg_volume
-    FROM 
-		fact_transactions AS t
-    LEFT JOIN 
-		dim_date AS d ON t.date_key = d.date_key
+    FROM fact_transactions AS t
+    LEFT JOIN dim_date AS d ON t.date_key = d.date_key
     GROUP BY
-        t.transaction_date, d.day_of_week, d.is_weekend
+        t.transaction_date, 
+		d.day_of_week, 
+		d.is_weekend
 ),
 rolling_avg AS (
     SELECT
@@ -362,11 +334,9 @@ SELECT
         WHEN spike_ratio >= 2.0 THEN 'Spike Detected'
         WHEN spike_ratio >= 1.5 THEN 'Elevated'
         ELSE                         'Normal'
-    END AS spike_flag
-FROM 
-	rolling_avg
-ORDER BY 
-		spike_ratio DESC;
+    END 									AS spike_flag
+FROM rolling_avg
+ORDER BY spike_ratio DESC;
 
 
 /*===========================================================================
@@ -391,10 +361,8 @@ WITH base AS (
             WHEN t.transaction_date < '2024-05-01' THEN 'early'
             ELSE 'late'
         END AS period
-    FROM 
-		fact_transactions AS t
-    LEFT JOIN 
-		dim_location AS l ON t.location_key = l.location_key
+    FROM fact_transactions AS t
+    LEFT JOIN dim_location AS l ON t.location_key = l.location_key
 ),
 customer_features AS (
     SELECT
@@ -413,10 +381,10 @@ customer_features AS (
             SUM(CASE WHEN time_window = 'Other-Hours' THEN 1 ELSE 0 END) * 100.0 / COUNT(*), 2
         ) AS other_hours_pct,
         COUNT(DISTINCT country)           AS country_count
-    FROM 
-		base
+    FROM base
     GROUP BY 
-		customer_key, period
+		customer_key, 
+		period
 ),
 early AS (
     SELECT * FROM customer_features WHERE period = 'early'
@@ -451,17 +419,13 @@ SELECT
             THEN 'MEDUIM RISK - Investigate'
         ELSE 'Normal Behavior'
     END AS risk_flag
-FROM 
-		early AS e
-LEFT JOIN 
-	late AS l ON e.customer_key = l.customer_key
-LEFT JOIN 
-	dim_customer AS c ON e.customer_key = c.customer_key
+FROM early AS e
+LEFT JOIN late AS l ON e.customer_key = l.customer_key
+LEFT JOIN dim_customer AS c ON e.customer_key = c.customer_key
 WHERE
     e.total_txn >= 3
     AND l.total_txn >= 5
-ORDER BY 
-		spend_multiplier DESC
+ORDER BY spend_multiplier DESC
 LIMIT 200;
 
 
@@ -492,24 +456,142 @@ SELECT
     )                                               AS off_hours_pct,
     MIN(t.transaction_date)                         AS first_foreign_txn,
     MAX(t.transaction_date)                         AS last_foreign_txn
-FROM 
-		fact_transactions AS t
-LEFT JOIN 
-		dim_customer c ON t.customer_key = c.customer_key
-LEFT JOIN 
-		dim_location l ON t.location_key = l.location_key
+FROM fact_transactions AS t
+LEFT JOIN dim_customer c ON t.customer_key = c.customer_key
+LEFT JOIN dim_location l ON t.location_key = l.location_key
 WHERE 
     l.country != c.country
     AND l.is_high_risk_country = 1
 GROUP BY
-    t.customer_key, c.full_name, c.country, l.country, l.is_high_risk_country
-HAVING 
-		COUNT(*) >= 3
-ORDER BY 
-    foreign_volume_usd DESC;
+    t.customer_key, 
+	c.full_name, 
+	c.country, 
+	l.country, 
+	l.is_high_risk_country
+HAVING COUNT(*) >= 3
+ORDER BY foreign_volume_usd DESC;
 
 
 
+/*===========================================================================
+DELIVERABLE 4: Merchant & Channel Risk Scoring
+============================================================================*/
+
+-- 4.1 Merchant Risk Profiling & Flagged Activity Analysis
+-- Aggregates transaction data at the merchant level to evaluate risk by analyzing flagged transactions, 
+-- transaction volume, customer reach, and off-hours activity, and ranks merchants based on flagged activity
+
+SELECT
+    m.merchant_key,
+    m.merchant_name,
+    m.merchant_category,
+    CASE 
+        WHEN m.is_shell_merchant = 1 THEN 'Yes'
+        ELSE 'No' 
+    END                                              AS is_shell_merchant,
+    m.risk_rating,
+    m.country,
+    COUNT(*)                                         AS total_transactions,
+    COUNT(DISTINCT t.customer_key)                   AS unique_customer,
+    SUM(t.is_flagged)                                AS flagged_count,
+    ROUND(SUM(t.amount_usd), 2)                      AS total_volume,
+    ROUND(AVG(t.amount_usd), 2)                      AS avg_volume,
+    ROUND((SUM(t.is_flagged) / NULLIF(COUNT(*), 0)) * 100, 2) AS flagged_rate_pct,
+    RANK() OVER (ORDER BY SUM(t.is_flagged) DESC)    AS risk_rank,
+    SUM(t.is_off_hours)                              AS off_hour_count,
+    ROUND(SUM(t.is_off_hours) * 100 / NULLIF(COUNT(*), 0), 2) AS off_hours_pct
+FROM fact_transactions AS t
+LEFT JOIN dim_merchant AS m ON t.merchant_key = m.merchant_key
+GROUP BY
+    m.merchant_key,
+    m.merchant_name,
+    m.merchant_category,
+    m.is_shell_merchant,
+    m.risk_rating,
+    m.country
+ORDER BY flagged_count DESC;
+
+
+-- 4.2 Shell Merchant Transaction Analysis by Country & Channel
+-- Analyzes transactions involving shell merchants, breaking down activity by merchant details, transaction location, 
+-- risk level, and channel to understand volume, customer reach, and geographic exposure
+
+SELECT
+    m.merchant_name,
+    m.merchant_category,
+    m.country                                      AS merchant_country,
+    l.country                                      AS transaction_country,
+    CASE 
+        WHEN l.is_high_risk_country = 1 THEN 'Yes'
+        ELSE 'No' 
+    END                                            AS is_high_risk_country,
+    t.channel,
+    COUNT(*)                                       AS total_transactions,
+    COUNT(DISTINCT t.customer_key)                 AS unique_customer,
+    ROUND(SUM(amount_usd), 2)                      AS total_volume,
+    ROUND(AVG(amount_usd), 2)                      AS avg_volume
+FROM fact_transactions AS t
+LEFT JOIN dim_merchant AS m ON t.merchant_key = m.merchant_key
+LEFT JOIN dim_location AS l ON t.location_key = l.location_key
+WHERE m.is_shell_merchant = 1
+GROUP BY
+    m.merchant_name,
+    m.merchant_category,
+    m.country,
+    l.country,
+    l.is_high_risk_country,
+    t.channel
+ORDER BY total_volume DESC;
+
+
+-- 4.3 Channel-Level Fraud & Transaction Performance Analysis
+-- Evaluates each transaction channel by summarizing customer reach, transaction volume, flagged activity (count and value),
+--  and off-hours behavior to identify high-risk channels and fraud concentration
+
+SELECT
+    channel,
+    COUNT(DISTINCT customer_key)                                   		AS unique_customer,
+    COUNT(*)                                                       		AS total_transactions,
+    SUM(is_flagged)                                                		AS total_flagged,
+    ROUND(SUM(is_flagged) * 100.0 / NULLIF(COUNT(*), 0), 2)        		AS flagged_pct,
+    ROUND(SUM(amount_usd), 2)                                      		AS total_volume,
+    ROUND(SUM(CASE WHEN is_flagged = 1 THEN amount_usd ELSE 0 END), 2) 	AS flagged_volume,
+    ROUND(
+        SUM(CASE WHEN is_flagged = 1 THEN amount_usd ELSE 0 END) * 100.0 
+        / NULLIF(SUM(amount_usd), 0), 2
+    )                                                             		AS flagged_volume_pct,
+    ROUND(AVG(amount_usd), 2)                                     		AS avg_volume,
+    SUM(is_off_hours)                                             		AS off_hour_count
+FROM fact_transactions
+GROUP BY channel
+ORDER BY flagged_volume DESC;
+
+
+-- 4.4 Country-Level Transaction & Fraud Risk Analysis
+-- Aggregates transactions by country to evaluate total activity, customer reach, flagged transaction rates, 
+-- and each country's contribution to overall volume, with emphasis on identifying high-risk countries
+
+SELECT
+    l.country,
+    CASE 
+        WHEN l.is_high_risk_country = 1 THEN 'Yes'
+        ELSE 'No' 
+    END                                              AS is_high_risk_country,
+    COUNT(*)                                         AS total_transactions,
+    COUNT(DISTINCT t.customer_key)                   AS unique_customer,
+    SUM(is_flagged)                                  AS flagged_count,
+    ROUND(SUM(is_flagged) * 100.0 / COUNT(*), 2)     AS flagged_pct,
+    ROUND(SUM(t.amount_usd), 2)                      AS total_volume,
+    ROUND(
+        SUM(t.amount_usd) * 100.0 
+        / SUM(SUM(t.amount_usd)) OVER (), 2
+    )                                                AS total_volume_pct
+FROM fact_transactions AS t
+LEFT JOIN dim_location AS l ON t.location_key = l.location_key
+GROUP BY 
+    l.country,
+    l.is_high_risk_country
+ORDER BY flagged_pct DESC;
 
 
 
