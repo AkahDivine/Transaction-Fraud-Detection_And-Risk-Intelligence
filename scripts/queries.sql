@@ -748,6 +748,29 @@ FROM watchlist
 ORDER BY total_risk_score DESC;
 
 
+-- 5.2 Customer Risk Tier Distribution & Summary Analysis
+-- IMPORTANT: This query reads from a temporary table (temp_customer_watchlist).
+-- You must create/run the temp_customer_watchlist table first before executing this query.
+-- This query summarizes customers by risk tier (LOW, MEDIUM, HIGH, CRITICAL),
+-- showing distribution, average risk score, and score range per tier.
+
+SELECT
+    risk_tier,
+    COUNT(*)                                        	AS customer_count,
+    ROUND(COUNT(*) * 100.0 / SUM(COUNT(*)) OVER (), 2) 	AS customer_pct,
+    ROUND(AVG(total_risk_score), 2)                 	AS avg_risk_score,
+    MIN(total_risk_score)                           	AS min_risk_score,
+    MAX(total_risk_score)                           	AS max_risk_score
+FROM temp_customer_watchlist
+GROUP BY risk_tier
+ORDER BY
+    CASE
+        WHEN risk_tier = 'CRITICAL' THEN 1
+        WHEN risk_tier = 'HIGH'     THEN 2
+        WHEN risk_tier = 'MEDIUM'   THEN 3
+        WHEN risk_tier = 'LOW'      THEN 4
+    END;
+
 
 
 
