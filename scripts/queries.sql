@@ -424,7 +424,7 @@ LEFT JOIN late AS l ON e.customer_key = l.customer_key
 LEFT JOIN dim_customer AS c ON e.customer_key = c.customer_key
 WHERE
     e.total_txn >= 3
-    AND l.total_txn >= 5
+    AND l.total_txn >= 3
 ORDER BY spend_multiplier DESC
 LIMIT 200;
 
@@ -592,6 +592,9 @@ GROUP BY
     l.country,
     l.is_high_risk_country
 ORDER BY flagged_pct DESC;
+
+
+
 
 
 
