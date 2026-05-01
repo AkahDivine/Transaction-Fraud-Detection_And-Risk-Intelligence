@@ -594,6 +594,159 @@ GROUP BY
 ORDER BY flagged_pct DESC;
 
 
+/*===========================================================================
+DELIVERABLE 5: Fraud Risk Scoring Model 
+============================================================================*/
+
+-- 5.1 Customer Fraud Risk Scoring & Watchlist (Temp Table Creation)
+-- Builds a customer-level fraud scoring system using multiple behavioral signals
+-- (off-hours activity, spend spikes, shell merchants, high-risk countries, KYC status),
+-- assigns risk scores and tiers, and stores the result in a temporary table for reuse in downstream analysis
+
+DROP TABLE IF EXISTS temp_customer_watchlist;
+
+CREATE TEMP TABLE temp_customer_watchlist AS
+WITH off_hours_signals AS (
+    SELECT
+        customer_key,
+        COUNT(*) AS total_txns,
+        SUM(is_off_hours) AS off_hours_txns,
+        ROUND(SUM(is_off_hours) * 100.0 / NULLIF(COUNT(*),0), 2) AS off_hours_pct
+    FROM fact_transactions
+    GROUP BY customer_key
+),
+spend_spike_signal AS (
+    SELECT
+        customer_key,
+        ROUND(AVG(CASE WHEN transaction_date < '2024-05-01' THEN amount_usd END), 2) AS early_spend_avg,
+        ROUND(AVG(CASE WHEN transaction_date >= '2024-05-01' THEN amount_usd END), 2) AS late_spend_avg,
+        ROUND(
+            AVG(CASE WHEN transaction_date >= '2024-05-01' THEN amount_usd ELSE 0 END) /
+            NULLIF(AVG(CASE WHEN transaction_date < '2024-05-01' THEN amount_usd ELSE 0 END), 0), 
+        2) AS spend_multiplier
+    FROM fact_transactions
+    GROUP BY customer_key
+    HAVING 
+        COUNT(CASE WHEN transaction_date < '2024-05-01' THEN 1 END) > 3
+        AND COUNT(CASE WHEN transaction_date >= '2024-05-01' THEN 1 END) > 3
+),
+shell_merchant_signal AS (
+    SELECT
+        t.customer_key,
+        ROUND(SUM(m.is_shell_merchant) * 100.0 / NULLIF(COUNT(*), 0), 2) AS shell_rate_pct
+    FROM fact_transactions AS t
+    LEFT JOIN dim_merchant AS m ON t.merchant_key = m.merchant_key
+    GROUP BY t.customer_key
+),
+high_risk_country_signal AS (
+    SELECT
+        t.customer_key,
+        COUNT(*) AS total_txns,
+        SUM(l.is_high_risk_country) AS shell_txns,
+        ROUND(SUM(l.is_high_risk_country) * 100.0 / NULLIF(COUNT(*), 0), 2) AS high_risk_country_rate_pct
+    FROM fact_transactions AS t
+    LEFT JOIN dim_location AS l ON t.location_key = l.location_key
+    GROUP BY t.customer_key
+),
+scoring_system AS (
+    SELECT
+        o.customer_key,
+        c.full_name,
+        c.country,
+        c.kyc_status,
+        c.customer_segment,
+        o.off_hours_pct,
+        sp.spend_multiplier,
+        sh.shell_rate_pct,
+        h.high_risk_country_rate_pct,
+
+        CASE
+            WHEN o.off_hours_pct >= 40 THEN 25
+            WHEN o.off_hours_pct >= 25 THEN 18
+            WHEN o.off_hours_pct >= 10 THEN 10
+            ELSE 3
+        END AS off_hours_score,
+
+        CASE
+            WHEN sp.spend_multiplier IS NULL THEN 0
+            WHEN sp.spend_multiplier >= 10 THEN 25
+            WHEN sp.spend_multiplier >= 5 THEN 18
+            WHEN sp.spend_multiplier >= 2 THEN 10
+            ELSE 2
+        END AS spend_multiplier_score,
+
+        CASE
+            WHEN sh.shell_rate_pct >= 50 THEN 20
+            WHEN sh.shell_rate_pct >= 25 THEN 13
+            WHEN sh.shell_rate_pct >= 10 THEN 7
+            ELSE 1
+        END AS shell_merchant_score,
+
+        CASE
+            WHEN h.high_risk_country_rate_pct >= 50 THEN 20
+            WHEN h.high_risk_country_rate_pct >= 20 THEN 13
+            WHEN h.high_risk_country_rate_pct >= 5 THEN 6
+            ELSE 0
+        END AS high_risk_country_score,
+
+        CASE
+            WHEN c.kyc_status = 'Expired' THEN 10
+            WHEN c.kyc_status = 'Pending' THEN 5
+            ELSE 0
+        END AS kyc_status_score
+
+    FROM off_hours_signals AS o
+    LEFT JOIN dim_customer AS c ON o.customer_key = c.customer_key
+    LEFT JOIN spend_spike_signal AS sp ON o.customer_key = sp.customer_key
+    LEFT JOIN shell_merchant_signal AS sh ON o.customer_key = sh.customer_key
+    LEFT JOIN high_risk_country_signal AS h ON o.customer_key = h.customer_key
+),
+watchlist AS (
+    SELECT
+        *,
+        off_hours_score + spend_multiplier_score + shell_merchant_score 
+        + high_risk_country_score + kyc_status_score AS total_risk_score,
+
+        CASE 
+            WHEN off_hours_score + spend_multiplier_score + shell_merchant_score 
+               + high_risk_country_score + kyc_status_score >= 70 THEN 'CRITICAL'
+            WHEN off_hours_score + spend_multiplier_score + shell_merchant_score 
+               + high_risk_country_score + kyc_status_score >= 50 THEN 'HIGH'
+            WHEN off_hours_score + spend_multiplier_score + shell_merchant_score 
+               + high_risk_country_score + kyc_status_score >= 30 THEN 'MEDUIM'
+            ELSE 'LOW'
+        END AS risk_tier,
+
+        ROUND(
+            (PERCENT_RANK() OVER (
+                ORDER BY off_hours_score + spend_multiplier_score + shell_merchant_score 
+                + high_risk_country_score + kyc_status_score
+            ) * 100)::NUMERIC, 2
+        ) AS risk_percentile
+
+    FROM scoring_system
+)
+SELECT
+    customer_key,
+    full_name,
+    country,
+    kyc_status,
+    customer_segment,
+    off_hours_pct,
+    spend_multiplier,
+    shell_rate_pct,
+    high_risk_country_rate_pct,
+    off_hours_score,
+    spend_multiplier_score,
+    shell_merchant_score, 
+    high_risk_country_score,
+    kyc_status_score,
+    total_risk_score,
+    risk_tier,
+    risk_percentile
+FROM watchlist
+ORDER BY total_risk_score DESC;
+
 
 
 
