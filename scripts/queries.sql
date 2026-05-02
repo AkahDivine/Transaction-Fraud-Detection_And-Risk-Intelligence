@@ -807,7 +807,7 @@ FROM fact_transactions;
 SELECT
     fraud_type,
     COUNT(*)                                                   AS flagged_transactions,
-    COUNT(DISTINCT customer_key)                               AS customer_affected,
+    COUNT(DISTINCT customer_key)                               AS customers_affected,
     ROUND(SUM(amount_usd), 2)                                  AS total_volume_flagged,
     ROUND(AVG(amount_usd), 2)                                  AS avg_volume_flagged,
     ROUND(
@@ -818,6 +818,57 @@ WHERE is_flagged = 1
 GROUP BY fraud_type
 ORDER BY total_volume_flagged DESC;
 
+
+-- 6.3 Monthly Fraud Exposure Trend & MoM Change Analysis
+-- Aggregates flagged transactions by month to track fraud exposure over time, compares each month to 
+-- the previous one using LAG, and calculates month-over-month (MoM) changes in exposure and percentage growth
+
+WITH monthly_summary AS (
+    SELECT
+        d.year_number,
+        d.month_number,
+        d.month_name,
+        d.quarter_name,
+        COUNT(*)                                  AS flagged_transactions,
+        COUNT(DISTINCT t.customer_key)            AS customers_affected,
+        ROUND(SUM(amount_usd), 2)                 AS monthly_exposure
+    FROM fact_transactions AS t
+    LEFT JOIN dim_date AS d ON t.date_key = d.date_key
+    WHERE t.is_flagged = 1
+    GROUP BY
+        d.year_number,
+        d.month_number,
+        d.month_name,
+        d.quarter_name
+),
+monthly_lag AS (
+    SELECT
+        *,
+        LAG(monthly_exposure) OVER (
+            ORDER BY 
+                year_number,
+                month_number,
+                month_name,
+                quarter_name
+        ) AS prevs_month_exposure
+    FROM monthly_summary
+)
+SELECT
+    month_name,
+    quarter_name,
+    flagged_transactions,
+    customers_affected,
+    monthly_exposure,
+    prevs_month_exposure,
+    monthly_exposure - prevs_month_exposure                        AS mom_exposure_change,
+    ROUND(
+        (monthly_exposure - prevs_month_exposure) * 100.0 
+        / NULLIF(prevs_month_exposure, 0), 2
+    )                                                             AS mom_change_pct
+FROM monthly_lag
+ORDER BY 
+	year_number, 
+	month_number;
 
 
 
