@@ -772,10 +772,51 @@ ORDER BY
     END;
 
 
+/*===========================================================================
+DELIVERABLE 6: Executive Risk Report & Recommendations
+============================================================================*/
+
+-- 6.1 Overall Transaction Fraud Summary (Temp Table Creation)
+-- Creates a temporary table storing a high-level fraud summary,comparing total transactions vs flagged transactions by count,
+-- percentage, volume, and average flagged amount.
+-- This temp table can be reused for further analysis.
+
+DROP TABLE IF EXISTS temp_fraud_summary;
+
+CREATE TEMP TABLE temp_fraud_summary AS
+SELECT
+    COUNT(*)                                                  AS total_transaction,
+    SUM(is_flagged)                                           AS flagged_txns,
+    ROUND(SUM(is_flagged) * 100.0 / NULLIF(COUNT(*), 0), 2)   AS flagged_pct,
+    SUM(amount_usd)                                           AS total_volume,
+    ROUND(SUM(CASE WHEN is_flagged = 1 THEN amount_usd END), 2) AS flagged_volume,
+    ROUND(
+        SUM(CASE WHEN is_flagged = 1 THEN amount_usd END) * 100.0 
+        / NULLIF(SUM(amount_usd), 0), 2
+    )                                                         AS flagged_volume_pct,
+    ROUND(
+        AVG(CASE WHEN is_flagged = 1 THEN amount_usd END), 2
+    )                                                         AS flagged_amount_avg
+FROM fact_transactions;
 
 
+-- 6.2 Fraud Type Distribution & Impact Analysis
+-- Analyzes flagged transactions by fraud type, showing frequency, number of affected customers, total 
+-- and average flagged volume, and each fraud type’s contribution to overall flagged transaction volume
 
-
+SELECT
+    fraud_type,
+    COUNT(*)                                                   AS flagged_transactions,
+    COUNT(DISTINCT customer_key)                               AS customer_affected,
+    ROUND(SUM(amount_usd), 2)                                  AS total_volume_flagged,
+    ROUND(AVG(amount_usd), 2)                                  AS avg_volume_flagged,
+    ROUND(
+        SUM(amount_usd) * 100.0 / SUM(SUM(amount_usd)) OVER (), 2
+    )                                                          AS pct_of_volume_flagged
+FROM fact_transactions
+WHERE is_flagged = 1
+GROUP BY fraud_type
+ORDER BY total_volume_flagged DESC;
 
 
 
