@@ -871,6 +871,68 @@ ORDER BY
 	month_number;
 
 
+-- 6.4 High-Risk Account Exposure & Action Recommendation
+-- Identifies customer accounts with significant flagged transaction activity, summarizes fraud exposure 
+--  (count, rate, and value), and assigns recommended actions based on severity (e.g., monitor, escalate, freeze)
+
+WITH exposed_accounts AS (
+    SELECT
+        t.customer_key,
+        t.account_key,
+        c.full_name,
+        c.country,
+        c.kyc_status,
+        a.account_id,
+        a.account_type,
+        a.account_status,
+        a.current_balance,
+        COUNT(*)                                        			AS total_transactions,
+        SUM(t.is_flagged)                               			AS flagged_transactions,
+        ROUND(SUM(t.is_flagged) * 100.0 / NULLIF(COUNT(*), 0), 2) 	AS flagged_rate_pct,
+        ROUND(
+            SUM(CASE WHEN t.is_flagged = 1 THEN t.amount_usd ELSE 0 END), 2
+        )                                               			AS flagged_amount,
+        MAX(t.transaction_date)                         			AS last_transaction_date
+    FROM fact_transactions AS t
+    LEFT JOIN dim_customer AS c ON t.customer_key = c.customer_key
+    LEFT JOIN dim_account AS a ON t.account_key = a.account_key
+    GROUP BY
+        t.customer_key,
+        t.account_key,
+        c.full_name,
+        c.country,
+        c.kyc_status,
+        a.account_id,
+        a.account_type,
+        a.account_status,
+        a.current_balance
+    HAVING SUM(t.is_flagged) >= 10
+)
+SELECT
+    account_id,
+    full_name,
+    country,
+    kyc_status,
+    account_type,
+    account_status,
+    current_balance,
+    total_transactions,
+    flagged_transactions,
+    flagged_rate_pct,
+    flagged_amount,
+    last_transaction_date,
+    CASE 
+        WHEN flagged_rate_pct >= 70
+         AND flagged_amount >= 50000 THEN 'FREEZE IMMEDIATELY'
+        WHEN flagged_rate_pct >= 50
+          OR flagged_amount >= 25000 THEN 'ESCALATE TO COMPLIANCE'
+        WHEN flagged_rate_pct >= 30 THEN 'ENHANCED MONITORING'
+        ELSE 'FLAG FOR REVIEW'
+    END AS recommended_actions
+FROM exposed_accounts
+ORDER BY flagged_amount DESC;
+
+
 
 
 
