@@ -933,6 +933,86 @@ FROM exposed_accounts
 ORDER BY flagged_amount DESC;
 
 
+-- 6.5 Executive Fraud Summary Dashboard (KPI Snapshot)
+-- IMPORTANT: This query uses a temporary table (temp_fraud_summary). You must run the 
+-- "6.1 Overall Transaction Fraud Summary" query first to create temp_fraud_summary before executing this.
+-- This query compiles key fraud KPIs into a simple dashboard-style output, including total transactions,
+--  fraud exposure, fraud rate, highest risk channel, highest risk fraud type, and number of accounts recommended for freeze.
+
+SELECT
+    'TOTAL TRANSACTIONS REVIWED' AS Metric,
+    total_transaction::VARCHAR  AS Value
+FROM temp_fraud_summary
+
+UNION ALL
+
+SELECT 
+    'TOTAL FRAUD EXPOSURE (USD)',
+    '$' || TO_CHAR(flagged_volume, 'FM999,999,999,999')
+FROM temp_fraud_summary
+
+UNION ALL
+
+SELECT
+    'FRAUD RATE (%)',
+    flagged_pct::VARCHAR || '%'
+FROM temp_fraud_summary
+
+UNION ALL
+
+SELECT
+    'HIGHEST RISK CHANNEL',
+    channel
+FROM (
+    SELECT
+        channel
+    FROM fact_transactions
+    WHERE is_flagged = 1
+    GROUP BY channel
+    ORDER BY COUNT(*) DESC
+    LIMIT 1
+)
+
+UNION ALL
+
+SELECT
+    'HIGHEST RISK FRAUD TYPE',
+    fraud_type
+FROM (
+    SELECT
+        fraud_type
+    FROM fact_transactions
+    WHERE is_flagged = 1
+    GROUP BY fraud_type
+    ORDER BY SUM(amount_usd) DESC
+    LIMIT 1
+) AS t
+
+UNION ALL
+
+SELECT
+    'ACCOUNTS RECOMMEDED FOR FREEZE',
+    (COUNT(*))::VARCHAR
+FROM (
+    SELECT account_key
+    FROM fact_transactions
+    GROUP BY account_key
+    HAVING 
+        SUM(is_flagged) * 100.0 / COUNT(*) >= 70
+        AND SUM(CASE 
+                    WHEN is_flagged = 1 THEN amount_usd 
+                    ELSE 0 
+                END) >= 50000
+) AS t;
+
+
+-- Temporary Table Cleanup (Fraud Analysis Workspace)
+-- Drops temporary tables used in prior fraud analysis steps
+-- (temp_fraud_summary and temp_customer_watchlist) to reset
+-- the workspace and prevent conflicts before rerunning scripts
+
+DROP TABLE IF EXISTS temp_fraud_summary;
+DROP TABLE IF EXISTS temp_customer_watchlist;
 
 
 
