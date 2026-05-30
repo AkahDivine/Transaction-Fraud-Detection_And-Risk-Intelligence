@@ -62,3 +62,71 @@ Channel-level analysis showed that the fraud activity was largely digital. **Mob
 
 Country-level analysis revealed an even stronger signal. **Ten high-risk countries — Venezuela, Cuba, Iran, Myanmar, North Korea, Russia, Somalia, Sudan, Syria, and Belarus — recorded a 100% flagged transaction rate**, with no legitimate transactions observed. Combined, these countries accounted for **$153.3 million in transaction volume, representing 43% of the total portfolio**, making them a major source of the bank’s fraud exposure.
 
+### Deliverable 5: Fraud Risk Scoring Model
+
+A fraud risk scoring model was developed to rank customers based on behavioral and compliance signals. Each customer was assigned a score out of 100 based on multiple risk indicators, with higher scores indicating higher likelihood of fraudulent activity.
+
+#### Risk Scoring Signals
+
+| Signal                             | Max Points |
+| ---------------------------------- | ---------: |
+| Off-hours transaction rate         |         25 |
+| Spend multiplier                   |         25 |
+| Shell merchant transaction rate    |         20 |
+| High-risk country transaction rate |         20 |
+| KYC status                         |         10 |
+| **Total**                          |    **100** |
+
+#### Risk Tier Classification
+
+| Risk Tier | Score Range |
+| --------- | ----------- |
+| Critical  | ≥ 70        |
+| High      | 50 – 69     |
+| Medium    | 30 – 49     |
+| Low       | < 30        |
+
+#### Customer Distribution by Risk Tier
+
+| Risk Tier | Customers | % of Portfolio |
+| --------- | --------: | -------------: |
+| Critical  |        47 |         29.89% |
+| High      |        63 |         25.64% |
+| Medium    |       195 |         20.06% |
+| Low       |     7,642 |         24.48% |
+
+#### Key Findings
+
+Three accounts — **Yaw Buhari, Harry Wike, and Aisha Hughes** — achieved the maximum score of **100/100**, indicating extremely high-risk behavior across all signals.
+
+A total of **94 accounts in the Critical and High risk tiers** are recommended for immediate freezing, pending further investigation to prevent potential financial exposure.
+
+### Deliverable 6: Executive Risk Report & Recommendations
+
+This final deliverable summarizes the overall fraud exposure and highlights the key risk drivers identified during the investigation. The analysis reveals that fraud activity is concentrated in specific channels and driven primarily by account takeover attacks.
+
+#### Key Risk Metrics
+
+
+| Metric | Value |
+|------|------|
+| Total transactions reviewed | 195,276 |
+| Total fraud exposure | $267,303,004 |
+| Fraud rate | 10.11% |
+| Highest risk channel | Mobile banking |
+| Highest risk fraud type | Account takeover |
+| Accounts recommended to freeze | 268 |
+
+#### Key Findings
+
+Account takeover emerged as the most financially damaging fraud type, contributing approximately **$99,528,069.74**, representing **37.23% of total fraud exposure**. This fraud type affected **50 customers** and recorded a high average transaction value of **$26,288.45**, indicating low-frequency but high-impact attacks.
+
+Additionally, the freeze list revealed a critical operational concern: several accounts flagged for freezing were still marked as closed in the system but continued to generate transactions. This suggests gaps in account status enforcement and potential control weaknesses in downstream systems.
+
+## Conclusion
+
+This investigation into NorthAxis Bank’s transaction data revealed a clear pattern of concentrated fraud risk across specific channels, customers, and fraud types. Mobile banking emerged as the dominant channel for both legitimate and suspicious activity, while account takeover attacks were identified as the most financially damaging fraud method.
+
+Across the analysis period, fraud exposure was driven by a small number of high-value transactions rather than widespread low-value activity, indicating targeted and coordinated attack patterns. Customer risk profiling also showed that non-verified and expired KYC accounts carried slightly higher transaction risks, reinforcing the importance of strong identity validation.
+
+Overall, the findings highlight the need for tighter real-time monitoring, improved enforcement of account status controls, and prioritization of high-risk channels and merchants. Addressing these gaps will significantly reduce exposure and strengthen the bank’s fraud prevention framework.
